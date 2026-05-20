@@ -242,6 +242,7 @@ const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const FOOD_CONSUMPTION_PER_CAPITA = 0.38;
 const POPULATION_GROWTH_RATE_PER_TICK = 0.12;
 const POPULATION_DECLINE_RATE_PER_TICK = -0.18;
+const BOTTLENECK_THRESHOLD = -0.01;
 
 let state = loadState();
 let simulation = simulate(state);
@@ -548,6 +549,16 @@ function toBuildingCard(def) {
     statsLines.push("Warning: Missing label metadata for recipe resources.");
   }
 
+  if (def.multiConverter) {
+    const missingLabels = def.multiConverter.inputs
+      .map((inp) => inp.resource)
+      .concat([def.multiConverter.output])
+      .filter((r) => !labels[r]);
+    if (missingLabels.length > 0) {
+      statsLines.push(`Warning: Missing label metadata for: ${missingLabels.join(", ")}`);
+    }
+  }
+
   let statusText = "";
   if (isConverter) {
     statusText = runtime.active ? "● Active" : "● Paused – awaiting inputs";
@@ -691,7 +702,7 @@ function renderSupplyChain() {
     }
   }
 
-  const bottlenecks = statOrder.filter((r) => demand[r] && rates[r] < -0.01);
+  const bottlenecks = statOrder.filter((r) => demand[r] && rates[r] < BOTTLENECK_THRESHOLD);
 
   let html = "";
 
