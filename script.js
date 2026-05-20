@@ -173,17 +173,38 @@ let buildingRuntime = simulation.buildingRuntime;
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return structuredClone(defaults);
-    return mergeState(JSON.parse(raw));
+    if (raw) return mergeState(JSON.parse(raw));
+    const legacyRaw = localStorage.getItem("gain-power-save-v1");
+    if (legacyRaw) return mergeState(JSON.parse(legacyRaw));
+    return structuredClone(defaults);
   } catch {
+    const legacyRaw = localStorage.getItem("gain-power-save-v1");
+    if (legacyRaw) {
+      try {
+        return mergeState(JSON.parse(legacyRaw));
+      } catch {
+        return structuredClone(defaults);
+      }
+    }
     return structuredClone(defaults);
   }
 }
 
 function mergeState(candidate) {
+  const migratedBuildings = {
+    ...defaults.buildings,
+    ...(candidate?.buildings || {}),
+  };
+  if (candidate?.assets && typeof candidate.assets === "object") {
+    migratedBuildings.farm = Math.max(migratedBuildings.farm, candidate.assets.farm || 0);
+    migratedBuildings.ironMine = Math.max(migratedBuildings.ironMine, candidate.assets.mine || 0);
+    migratedBuildings.oilWell = Math.max(migratedBuildings.oilWell, candidate.assets.drill || 0);
+    migratedBuildings.steelMill = Math.max(migratedBuildings.steelMill, candidate.assets.steelMill || 0);
+    migratedBuildings.fuelRefinery = Math.max(migratedBuildings.fuelRefinery, candidate.assets.refinery || 0);
+  }
   return {
     stats: { ...defaults.stats, ...(candidate?.stats || {}) },
-    buildings: { ...defaults.buildings, ...(candidate?.buildings || {}) },
+    buildings: migratedBuildings,
     activeSection: sections.includes(candidate?.activeSection) ? candidate.activeSection : "Economy",
     tick: Number.isFinite(candidate?.tick) ? candidate.tick : 0,
   };
@@ -213,6 +234,10 @@ function getOwned(buildingId) {
 function calculateActiveWorkers(owned, population, populationRequired) {
   if (!Number.isFinite(populationRequired) || populationRequired <= 0) return 0;
   return Math.min(owned, Math.floor(population / populationRequired));
+}
+
+function labelFor(resourceKey) {
+  return labels[resourceKey] || resourceKey;
 }
 
 function getBuildingCost(def) {
@@ -270,7 +295,7 @@ function simulate(snapshot) {
     const owned = snapshot.buildings[def.id] || 0;
     if (owned <= 0 || !def.converter) continue;
     const requiredInput = owned * def.converter.inputAmount;
-    const availableInput = Number(snapshot.stats[def.converter.input] || 0);
+    const availableInput = snapshot.stats[def.converter.input] ?? 0;
     const isActive = availableInput >= requiredInput;
     runtime[def.id].active = isActive;
     runtime[def.id].maxProduction = owned * def.converter.outputAmount;
@@ -372,8 +397,8 @@ function toBuildingCard(def) {
   const production = runtime.production || 0;
   const productionLabel =
     def.converter
-      ? `${labels[def.converter.output]} +${fmt.format(production)}/s`
-      : `${labels[def.produces.resource]} +${fmt.format(production)}/s`;
+      ? `${labelFor(def.converter.output)} +${fmt.format(production)}/s`
+      : `${labelFor(def.produces.resource)} +${fmt.format(production)}/s`;
 
   const statsLines = [
     `Owned: ${fmtInt.format(owned)}`,
@@ -388,8 +413,12 @@ function toBuildingCard(def) {
 
   if (def.converter) {
     statsLines.push(
-      `Recipe: ${fmt.format(def.converter.inputAmount)} ${labels[def.converter.input]} → ${fmt.format(def.converter.outputAmount)} ${labels[def.converter.output]}`
+      `Recipe: ${fmt.format(def.converter.inputAmount)} ${labelFor(def.converter.input)} → ${fmt.format(def.converter.outputAmount)} ${labelFor(def.converter.output)}`
     );
+  }
+
+  if (def.converter && (!labels[def.converter.input] || !labels[def.converter.output])) {
+    statsLines.push("Warning: Missing label metadata for recipe resources.");
   }
 
   return {
@@ -462,7 +491,7 @@ function buildAlerts(extra = []) {
     if (owned > 0 && runtime && !runtime.active) {
       result.push({
         level: "warn",
-        text: `${def.name} inactive: need more ${labels[def.converter.input]}.`,
+        text: `${def.name} inactive: need more ${labelFor(def.converter.input)}.`,
       });
     }
   }
