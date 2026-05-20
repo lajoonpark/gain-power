@@ -30,7 +30,7 @@ body {
 
 .top-bar {
   display: grid;
-  grid-template-columns: repeat(10, minmax(90px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   gap: 0.45rem;
   padding: 0.65rem;
   background: rgba(6, 12, 25, 0.9);
@@ -159,12 +159,45 @@ body {
 }
 
 .pixel-icon {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   image-rendering: pixelated;
-  background: linear-gradient(90deg, #62a9ff 50%, #335ca1 50%);
-  box-shadow: 0 0 0 2px #21345f, 6px 0 0 #ffe083, 0 6px 0 #ffe083;
+  border: 2px solid #21345f;
+  border-radius: 2px;
   animation: pulse 1.8s infinite steps(3);
+}
+
+.icon-farm {
+  background: linear-gradient(180deg, #73cb73 55%, #7d5c35 55%);
+}
+
+.icon-shop {
+  background: linear-gradient(180deg, #f3c969 36%, #cc6a56 36%, #cc6a56 70%, #6b88d6 70%);
+}
+
+.icon-office,
+.icon-bank {
+  background: linear-gradient(180deg, #83a7ff 15%, #2e4f94 15%, #2e4f94 100%);
+}
+
+.icon-mine,
+.icon-mill {
+  background: linear-gradient(180deg, #a9b0c0 35%, #4d5a74 35%);
+}
+
+.icon-oil,
+.icon-refinery {
+  background: linear-gradient(180deg, #5f8be9 40%, #272f45 40%);
+}
+
+.icon-cotton,
+.icon-textile {
+  background: linear-gradient(180deg, #f0f2ff 48%, #93a2cd 48%);
+}
+
+.icon-stats,
+.icon-reset {
+  background: linear-gradient(180deg, #8fe0ff 50%, #3a63a8 50%);
 }
 
 @keyframes pulse {
@@ -182,11 +215,34 @@ body {
   font-size: 1rem;
 }
 
-.card-desc,
-.card-meta {
+.card-desc {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.card-stats {
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.card-status {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.card-status.active {
+  color: var(--ok);
+}
+
+.card-status.inactive {
+  color: var(--bad);
 }
 
 .card-progress {
@@ -203,7 +259,18 @@ body {
   height: 100%;
   width: 0;
   background: linear-gradient(90deg, #57d4ff, #6481ff);
+  background-size: 180% 100%;
+  animation: progressFlow 2.2s linear infinite;
   transition: width 200ms ease;
+}
+
+@keyframes progressFlow {
+  0% {
+    background-position: 0% 0;
+  }
+  100% {
+    background-position: 100% 0;
+  }
 }
 
 .card-button {
