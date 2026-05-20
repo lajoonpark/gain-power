@@ -161,6 +161,9 @@ const cardTemplate = document.getElementById("cardTemplate");
 
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const FOOD_CONSUMPTION_PER_POP = 0.38;
+const POPULATION_GROWTH_RATE = 0.12;
+const POPULATION_DECLINE_RATE = -0.18;
 
 let state = loadState();
 let simulation = simulate(state);
@@ -230,7 +233,7 @@ function simulate(snapshot) {
   const ratesOut = Object.fromEntries(statOrder.map((key) => [key, 0]));
   const runtime = {};
 
-  ratesOut.food -= snapshot.stats.population * 0.38;
+  ratesOut.food -= snapshot.stats.population * FOOD_CONSUMPTION_PER_POP;
 
   for (const def of buildingDefs) {
     const owned = snapshot.buildings[def.id] || 0;
@@ -276,7 +279,7 @@ function simulate(snapshot) {
     runtime[def.id].production = produced;
   }
 
-  ratesOut.population += ratesOut.food >= 0 ? 0.12 : -0.18;
+  ratesOut.population += ratesOut.food >= 0 ? POPULATION_GROWTH_RATE : POPULATION_DECLINE_RATE;
   return { rates: ratesOut, buildingRuntime: runtime };
 }
 
