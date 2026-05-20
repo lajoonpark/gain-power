@@ -161,9 +161,9 @@ const cardTemplate = document.getElementById("cardTemplate");
 
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const FOOD_CONSUMPTION_PER_POP = 0.38;
-const POPULATION_GROWTH_RATE = 0.12;
-const POPULATION_DECLINE_RATE = -0.18;
+const FOOD_CONSUMPTION_PER_CAPITA = 0.38;
+const POPULATION_GROWTH_PER_TICK = 0.12;
+const POPULATION_DECLINE_PER_TICK = -0.18;
 
 let state = loadState();
 let simulation = simulate(state);
@@ -210,6 +210,10 @@ function getOwned(buildingId) {
   return state.buildings[buildingId] || 0;
 }
 
+function calculateActiveWorkers(owned, population, populationRequired) {
+  return Math.min(owned, Math.floor(population / populationRequired));
+}
+
 function getBuildingCost(def) {
   const owned = getOwned(def.id);
   return Math.round(def.baseCost * def.growth ** owned);
@@ -233,7 +237,7 @@ function simulate(snapshot) {
   const ratesOut = Object.fromEntries(statOrder.map((key) => [key, 0]));
   const runtime = {};
 
-  ratesOut.food -= snapshot.stats.population * FOOD_CONSUMPTION_PER_POP;
+  ratesOut.food -= snapshot.stats.population * FOOD_CONSUMPTION_PER_CAPITA;
 
   for (const def of buildingDefs) {
     const owned = snapshot.buildings[def.id] || 0;
@@ -245,7 +249,7 @@ function simulate(snapshot) {
     if (owned <= 0 || !def.produces) continue;
 
     if (def.populationRequired) {
-      const activeCount = Math.min(owned, Math.floor(snapshot.stats.population / def.populationRequired));
+      const activeCount = calculateActiveWorkers(owned, snapshot.stats.population, def.populationRequired);
       const produced = activeCount * def.produces.amount;
       ratesOut[def.produces.resource] += produced;
       runtime[def.id].production = produced;
@@ -266,7 +270,7 @@ function simulate(snapshot) {
     if (owned <= 0 || !def.converter) continue;
     const requiredInput = owned * def.converter.inputAmount;
     const availableInput = snapshot.stats[def.converter.input];
-    const isActive = availableInput >= requiredInput && requiredInput > 0;
+    const isActive = availableInput >= requiredInput;
     runtime[def.id].active = isActive;
     runtime[def.id].maxProduction = owned * def.converter.outputAmount;
     if (!isActive) {
@@ -279,7 +283,7 @@ function simulate(snapshot) {
     runtime[def.id].production = produced;
   }
 
-  ratesOut.population += ratesOut.food >= 0 ? POPULATION_GROWTH_RATE : POPULATION_DECLINE_RATE;
+  ratesOut.population += ratesOut.food >= 0 ? POPULATION_GROWTH_PER_TICK : POPULATION_DECLINE_PER_TICK;
   return { rates: ratesOut, buildingRuntime: runtime };
 }
 
