@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gain Power!</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-bar" id="topBar"></header>
+      <div class="game-layout">
+        <aside class="sidebar">
+          <h1>Gain Power!</h1>
+          <nav id="sectionNav" class="section-nav"></nav>
+        </aside>
+
+        <main class="main-content">
+          <div class="panel-header">
+            <h2 id="sectionTitle">Economy</h2>
+            <p id="sectionSubtitle">Run your nation efficiently.</p>
+          </div>
+          <section id="sectionContent" class="card-grid"></section>
+        </main>
+
+        <aside class="alerts-panel">
+          <h3>Supply Chain Alerts</h3>
+          <ul id="alertsList"></ul>
+        </aside>
+      </div>
+    </div>
+
+    <template id="cardTemplate">
+      <article class="card">
+        <div class="card-head">
+          <div class="pixel-icon" aria-hidden="true"></div>
+          <div>
+            <h4 class="card-title"></h4>
+            <p class="card-desc"></p>
+          </div>
+        </div>
+        <p class="card-meta"></p>
+        <div class="card-progress"><span></span></div>
+        <button class="card-button"></button>
+      </article>
+    </template>
+
+    <script src="/script.js"></script>
+  </body>
+</html>
