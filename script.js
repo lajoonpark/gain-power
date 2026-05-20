@@ -1,8 +1,12 @@
 const STORAGE_KEY = "gain-power-save-v2";
 
-const sections = ["Economy", "Resources", "Stats"];
+const sections = ["Economy", "Resources", "Factories", "Stats"];
 
-const statOrder = ["money", "population", "food", "iron", "steel", "oil", "fuel", "cotton", "fabric"];
+const statOrder = [
+  "money", "population", "food",
+  "iron", "steel", "oil", "fuel", "cotton", "fabric",
+  "weapons", "uniforms", "ammo", "vehicles", "aircraftParts",
+];
 
 const labels = {
   money: "Money",
@@ -14,6 +18,11 @@ const labels = {
   fuel: "Fuel",
   cotton: "Cotton",
   fabric: "Fabric",
+  weapons: "Weapons",
+  uniforms: "Uniforms",
+  ammo: "Ammo",
+  vehicles: "Vehicles",
+  aircraftParts: "Aircraft Parts",
 };
 
 const buildingDefs = [
@@ -118,6 +127,69 @@ const buildingDefs = [
     converter: { input: "cotton", inputAmount: 1.25, output: "fabric", outputAmount: 1.0 },
     desc: "Converts cotton into fabric.",
   },
+  {
+    id: "weaponFactory",
+    name: "Weapon Factory",
+    section: "Factories",
+    icon: "factory-weapon",
+    baseCost: 380,
+    growth: 1.21,
+    converter: { input: "steel", inputAmount: 1.2, output: "weapons", outputAmount: 0.9 },
+    chain: "Iron → Steel → Weapons",
+    desc: "Forges weapons from steel.",
+  },
+  {
+    id: "uniformFactory",
+    name: "Uniform Factory",
+    section: "Factories",
+    icon: "factory-uniform",
+    baseCost: 300,
+    growth: 1.19,
+    converter: { input: "fabric", inputAmount: 1.1, output: "uniforms", outputAmount: 0.85 },
+    chain: "Cotton → Fabric → Uniforms",
+    desc: "Tailors uniforms from fabric.",
+  },
+  {
+    id: "ammoFactory",
+    name: "Ammo Factory",
+    section: "Factories",
+    icon: "factory-ammo",
+    baseCost: 340,
+    growth: 1.20,
+    converter: { input: "steel", inputAmount: 1.0, output: "ammo", outputAmount: 1.1 },
+    chain: "Iron → Steel → Ammo",
+    desc: "Manufactures ammunition from steel.",
+  },
+  {
+    id: "vehicleFactory",
+    name: "Vehicle Factory",
+    section: "Factories",
+    icon: "factory-vehicle",
+    baseCost: 680,
+    growth: 1.22,
+    multiConverter: {
+      inputs: [{ resource: "steel", amount: 2.0 }, { resource: "fuel", amount: 0.8 }],
+      output: "vehicles",
+      outputAmount: 0.5,
+    },
+    chain: "Iron → Steel + Oil → Fuel → Vehicles",
+    desc: "Assembles vehicles from steel and fuel.",
+  },
+  {
+    id: "aircraftFactory",
+    name: "Aircraft Parts Factory",
+    section: "Factories",
+    icon: "factory-aircraft",
+    baseCost: 950,
+    growth: 1.25,
+    multiConverter: {
+      inputs: [{ resource: "steel", amount: 2.5 }, { resource: "fuel", amount: 1.2 }],
+      output: "aircraftParts",
+      outputAmount: 0.4,
+    },
+    chain: "Iron → Steel + Oil → Fuel → Aircraft Parts",
+    desc: "Produces aircraft components from steel and fuel.",
+  },
 ];
 
 const buildingIds = buildingDefs.map((building) => building.id);
@@ -133,6 +205,11 @@ const defaults = {
     fuel: 2,
     cotton: 12,
     fabric: 1,
+    weapons: 0,
+    uniforms: 0,
+    ammo: 0,
+    vehicles: 0,
+    aircraftParts: 0,
   },
   buildings: Object.fromEntries(buildingIds.map((id) => [id, 0])),
   activeSection: "Economy",
@@ -148,6 +225,7 @@ defaults.buildings.cottonFarm = 1;
 const subtitles = {
   Economy: "Buy and scale your national economy.",
   Resources: "Build extraction and conversion chains.",
+  Factories: "Turn raw materials into military and industrial output.",
   Stats: "Inspect save status and manage progress.",
 };
 
@@ -164,6 +242,7 @@ const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const FOOD_CONSUMPTION_PER_CAPITA = 0.38;
 const POPULATION_GROWTH_RATE_PER_TICK = 0.12;
 const POPULATION_DECLINE_RATE_PER_TICK = -0.18;
+const BOTTLENECK_THRESHOLD = -0.01;
 
 let state = loadState();
 let simulation = simulate(state);
@@ -268,7 +347,7 @@ function simulate(snapshot) {
   for (const def of buildingDefs) {
     const owned = snapshot.buildings[def.id] || 0;
     runtime[def.id] = {
-      active: !def.converter,
+      active: !(def.converter || def.multiConverter),
       production: 0,
       maxProduction: 0,
     };
@@ -309,6 +388,27 @@ function simulate(snapshot) {
     runtime[def.id].production = produced;
   }
 
+  for (const def of buildingDefs) {
+    const owned = snapshot.buildings[def.id] || 0;
+    if (owned <= 0 || !def.multiConverter) continue;
+    const mc = def.multiConverter;
+    const isActive = mc.inputs.every(
+      (inp) => (snapshot.stats[inp.resource] ?? 0) >= owned * inp.amount
+    );
+    runtime[def.id].active = isActive;
+    runtime[def.id].maxProduction = owned * mc.outputAmount;
+    if (!isActive) {
+      runtime[def.id].production = 0;
+      continue;
+    }
+    const produced = owned * mc.outputAmount;
+    for (const inp of mc.inputs) {
+      ratesOut[inp.resource] -= owned * inp.amount;
+    }
+    ratesOut[mc.output] += produced;
+    runtime[def.id].production = produced;
+  }
+
   ratesOut.population += ratesOut.food >= 0 ? POPULATION_GROWTH_RATE_PER_TICK : POPULATION_DECLINE_RATE_PER_TICK;
   return { rates: ratesOut, buildingRuntime: runtime };
 }
@@ -324,6 +424,7 @@ function applyTick() {
   saveState();
   renderTopBar();
   renderAlerts();
+  renderSupplyChain();
   renderCards();
 }
 
@@ -364,6 +465,13 @@ function card(def) {
   const icon = node.querySelector(".pixel-icon");
   icon.className = `pixel-icon icon-${def.icon}`;
 
+  const chainNode = node.querySelector(".card-chain");
+  if (def.chainText) {
+    chainNode.textContent = def.chainText;
+  } else {
+    chainNode.remove();
+  }
+
   const statsNode = node.querySelector(".card-stats");
   statsNode.innerHTML = "";
   def.stats.forEach((item) => {
@@ -395,10 +503,21 @@ function toBuildingCard(def) {
   const cost = getBuildingCost(def);
   const runtime = buildingRuntime[def.id] || { active: true, production: 0, maxProduction: 0 };
   const production = runtime.production || 0;
-  const productionLabel =
-    def.converter
-      ? `${labelFor(def.converter.output)} +${fmt.format(production)}/s`
-      : `${labelFor(def.produces.resource)} +${fmt.format(production)}/s`;
+
+  const isConverter = def.converter || def.multiConverter;
+  let outputResource, outputAmount;
+  if (def.converter) {
+    outputResource = def.converter.output;
+    outputAmount = def.converter.outputAmount;
+  } else if (def.multiConverter) {
+    outputResource = def.multiConverter.output;
+    outputAmount = def.multiConverter.outputAmount;
+  } else {
+    outputResource = def.produces.resource;
+    outputAmount = def.produces.amount;
+  }
+
+  const productionLabel = `${labelFor(outputResource)} +${fmt.format(production)}/s`;
 
   const statsLines = [
     `Owned: ${fmtInt.format(owned)}`,
@@ -417,16 +536,41 @@ function toBuildingCard(def) {
     );
   }
 
+  if (def.multiConverter) {
+    const inputStr = def.multiConverter.inputs
+      .map((inp) => `${fmt.format(inp.amount)} ${labelFor(inp.resource)}`)
+      .join(" + ");
+    statsLines.push(
+      `Recipe: ${inputStr} → ${fmt.format(def.multiConverter.outputAmount)} ${labelFor(outputResource)}`
+    );
+  }
+
   if (def.converter && (!labels[def.converter.input] || !labels[def.converter.output])) {
     statsLines.push("Warning: Missing label metadata for recipe resources.");
+  }
+
+  if (def.multiConverter) {
+    const missingLabels = def.multiConverter.inputs
+      .map((inp) => inp.resource)
+      .concat([def.multiConverter.output])
+      .filter((r) => !labels[r]);
+    if (missingLabels.length > 0) {
+      statsLines.push(`Warning: Missing label metadata for: ${missingLabels.join(", ")}`);
+    }
+  }
+
+  let statusText = "";
+  if (isConverter) {
+    statusText = runtime.active ? "● Active" : "● Paused – awaiting inputs";
   }
 
   return {
     title: def.name,
     icon: def.icon,
+    chainText: def.chain,
     desc: def.desc,
     stats: statsLines,
-    statusText: def.converter ? (runtime.active ? "Status: Active" : "Status: Inactive") : "",
+    statusText,
     statusClass: runtime.active ? "active" : "inactive",
     progress: runtime.maxProduction > 0 ? (production / runtime.maxProduction) * 100 : 0,
     button: `Buy (${fmtInt.format(cost)} Money)`,
@@ -491,7 +635,21 @@ function buildAlerts(extra = []) {
     if (owned > 0 && runtime && !runtime.active) {
       result.push({
         level: "warn",
-        text: `${def.name} inactive: need more ${labelFor(def.converter.input)}.`,
+        text: `${def.name} needs more ${labelFor(def.converter.input)}.`,
+      });
+    }
+  }
+  for (const def of buildingDefs.filter((item) => item.multiConverter)) {
+    const owned = getOwned(def.id);
+    const runtime = buildingRuntime[def.id];
+    if (owned > 0 && runtime && !runtime.active) {
+      const mc = def.multiConverter;
+      const missing = mc.inputs
+        .filter((inp) => (state.stats[inp.resource] ?? 0) < owned * inp.amount)
+        .map((inp) => labelFor(inp.resource));
+      result.push({
+        level: "warn",
+        text: `${def.name} needs more ${missing.join(" and ")}.`,
       });
     }
   }
@@ -519,12 +677,76 @@ function renderAlerts(extra) {
     });
 }
 
+function renderSupplyChain() {
+  const el = document.getElementById("supplyChainSummary");
+  if (!el) return;
+
+  const demand = {};
+  const factoryOutput = {};
+
+  for (const def of buildingDefs) {
+    const owned = getOwned(def.id);
+    if (owned <= 0) continue;
+
+    if (def.converter) {
+      const r = def.converter.input;
+      demand[r] = (demand[r] || 0) + def.converter.inputAmount * owned;
+      const out = def.converter.output;
+      factoryOutput[out] = (factoryOutput[out] || 0) + (buildingRuntime[def.id]?.production || 0);
+    } else if (def.multiConverter) {
+      for (const inp of def.multiConverter.inputs) {
+        demand[inp.resource] = (demand[inp.resource] || 0) + inp.amount * owned;
+      }
+      const out = def.multiConverter.output;
+      factoryOutput[out] = (factoryOutput[out] || 0) + (buildingRuntime[def.id]?.production || 0);
+    }
+  }
+
+  const bottlenecks = statOrder.filter((r) => demand[r] && rates[r] < BOTTLENECK_THRESHOLD);
+
+  let html = "";
+
+  if (Object.keys(demand).length > 0) {
+    html += `<div class="sc-section"><div class="sc-label">Input Demand / s</div>`;
+    for (const [r, amt] of Object.entries(demand)) {
+      html += `<div class="sc-row"><span>${labels[r] || r}</span><span>${fmt.format(amt)}/s</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (Object.keys(factoryOutput).length > 0) {
+    html += `<div class="sc-section"><div class="sc-label">Factory Output / s</div>`;
+    for (const [r, amt] of Object.entries(factoryOutput)) {
+      html += `<div class="sc-row"><span>${labels[r] || r}</span><span class="pos">+${fmt.format(amt)}/s</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (bottlenecks.length > 0) {
+    html += `<div class="sc-section"><div class="sc-label">⚠ Bottlenecks</div>`;
+    for (const r of bottlenecks) {
+      const deficit = Math.abs(rates[r]);
+      html += `<div class="sc-row bad"><span>${labels[r] || r}</span><span>−${fmt.format(deficit)}/s</span></div>`;
+    }
+    html += `</div>`;
+  } else if (Object.keys(demand).length > 0) {
+    html += `<div class="sc-section"><div class="sc-row good">No bottlenecks detected</div></div>`;
+  }
+
+  if (!html) {
+    html = `<div class="sc-empty">Build factories to see supply chain data.</div>`;
+  }
+
+  el.innerHTML = html;
+}
+
 function render() {
   recalc();
   renderTopBar();
   renderNav();
   renderCards();
   renderAlerts();
+  renderSupplyChain();
 }
 
 render();
